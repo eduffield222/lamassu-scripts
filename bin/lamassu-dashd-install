@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -e
+
+echo
+
+if status dashd &>/dev/null; then
+  echo "bitcoind is already installed."
+  exit 4
+fi
+
+EMAIL_ADDRESS=$1
+if [ ! $# -eq 1 ]; then
+  echo "Please enter your email address."
+  echo "Bitcoin wallet backups will automatically be sent there."
+  echo
+  echo "lamassu-dashd-install <email_address>"
+  echo
+  exit 1
+elif [[ ! $EMAIL_ADDRESS =~ .+@.+\..+ ]]; then
+  echo "Please enter a valid email address."
+  echo
+  echo "lamassu-dashd-install <email_address>"
+  exit 2
+fi
+
+if ! gpg --list-public-keys --with-colons $EMAIL_ADDRESS &>/dev/null; then
+  echo "Before running this, please import your PGP keys."
+  echo "To do this, run this command:"
+  echo
+  echo "  gpg --search-keys --keyserver pool.sks-keyservers.net $EMAIL_ADDRESS"
+  echo
+  echo "You will be presented with a list of your PGP keys,"
+  echo "you should choose the one you want to use."
+  echo "When you are done, run lamassu-dashd-install again."
+  echo
+  exit 3
+fi
+
+echo "Updating your system for dashd. Might take a few minutes."
+{
+apt-get update -y
+apt-get upgrade -y
+DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common python-software-properties postfix mutt ufw -y
+} &>/dev/null
+
+# set up postfix for emailing backups
+cp /usr/share/postfix/main.cf.debian /etc/postfix/main.cf
+/etc/init.d/postfix reload >/dev/null
+
+echo "Installing dashd."
+
+wget --no-check-certificate https://www.dashpay.io/binaries/dash-0.12.0.47-linux64.tar.gz
+tar xfz dash-0.12.0.47-linux64.tar.gz
+cp -f dash-0.12.0/bin/* /usr/local/bin
+rm dash-0.12.0.47-linux64.tar.gz
+mkdir ~/.dash
+
+# Set up firewall
+ufw allow ssh
+ufw allow 8081/tcp
+ufw allow 3000/tcp
+ufw allow 8333/tcp
+echo 'y' | ufw enable
+
+config="/root/.dash/dash.conf"
+touch $config
+echo "server=1" > $config
+echo "daemon=0" >> $config
+echo "connections=40" >> $config
+randUser=`< /dev/urandom tr -dc A-Za-z0-9 | head -c30`
+randPass=`< /dev/urandom tr -dc A-Za-z0-9 | head -c30`
+echo "rpcuser=$randUser" >> $config
+echo "rpcpassword=$randPass" >> $config
+echo "keypool=1000" >> $config
+
+cat > "/etc/init/dashd.conf" <<EOF
+description "dashd"
+
+start on runlevel [2345]
+stop on runlevel [016]
+
+console log
+
+respawn
+respawn limit 8 4
+
+exec start-stop-daemon --start -c root --exec /usr/local/bin/dashd
+EOF
+
+start dashd
+
+echo "Waiting for dashd to load."
+until dash-cli getblockcount &>/dev/null; do sleep 1; done
+
+# Set up wallet backup cron job
+echo -e "MAILTO=$EMAIL_ADDRESS\n00 05 * * * /usr/local/bin/lamassu-dashd-backup \"$EMAIL_ADDRESS\"" | \
+crontab -
+
+/usr/local/bin/lamassu-dashd-backup $EMAIL_ADDRESS
+
+echo
+echo "Installation was successful! dashd is now running."
+echo
+echo "It will take about 24 hours for dashd to load the entire blockchain."
+echo
+echo "Please check your email for your first wallet backup."
+echo
+echo "When your blockchain has caught up, run lamassu-dashd-enable to start"
+echo "using dashd as your remote server wallet."
+echo

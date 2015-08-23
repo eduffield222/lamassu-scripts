@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -e
+
+EMAIL_ADDRESS=$1
+if [ ! $# -eq 1 ]; then
+  echo "lamassu-dashd-backup <email_address>"
+  exit 1
+elif [[ ! $EMAIL_ADDRESS =~ .+@.+\..+ ]]; then
+  echo "Please enter a valid email address."
+  echo
+  echo "lamassu-dashd-backup <email_address>"
+  exit 1
+fi
+
+mkdir -p $HOME/archive
+BACKUP_FILE=$HOME/archive/wallet-$(date -u "+%Y-%m-%d_%H-%M-%S").bak
+dash-cli backupwallet $BACKUP_FILE
+gpg --batch --trust-model always -e -r $EMAIL_ADDRESS $BACKUP_FILE
+rm $BACKUP_FILE
+export EMAIL="Dash Backup <$EMAIL_ADDRESS>"
+echo "Attached is your encrypted dashd backup." | mutt -s "Encrypted dashd backup" -a $BACKUP_FILE.gpg -- $EMAIL_ADDRESS
