@@ -4,16 +4,18 @@ set -e
 echo
 
 if status dashd &>/dev/null; then
-  echo "bitcoind is already installed."
+  echo "dashd is already installed."
   exit 4
 fi
 
 EMAIL_ADDRESS=$1
-if [ ! $# -eq 1 ]; then
-  echo "Please enter your email address."
+DASH_VERSION=$2
+if [ ! $# -eq 2 ]; then
+  echo "Please enter your email address and Dash version."
   echo "Bitcoin wallet backups will automatically be sent there."
   echo
-  echo "lamassu-dashd-install <email_address>"
+  echo "lamassu-dashd-install <email_address> <dash_version>"
+  echo "example: lamassu-dashd-install myself@example.org 0.12.0.47"
   echo
   exit 1
 elif [[ ! $EMAIL_ADDRESS =~ .+@.+\..+ ]]; then
@@ -49,7 +51,7 @@ cp /usr/share/postfix/main.cf.debian /etc/postfix/main.cf
 
 echo "Installing dashd."
 
-wget --no-check-certificate https://www.dashpay.io/binaries/dash-0.12.0.47-linux64.tar.gz
+wget --no-check-certificate https://www.dashpay.io/binaries/dash-$DASH_VERSION-linux64.tar.gz
 tar xfz dash-0.12.0.47-linux64.tar.gz
 cp -f dash-0.12.0/bin/* /usr/local/bin
 rm dash-0.12.0.47-linux64.tar.gz
